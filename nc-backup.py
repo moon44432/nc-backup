@@ -90,7 +90,7 @@ def do_backup(args):
             if args.download_img == True: # download images
                 img_dir = "%s/img/" % save_dir
 
-                imgs = driver.find_elements(By.XPATH, "//img[@class='article_img ATTACH_IMAGE']")
+                imgs = driver.find_elements(By.XPATH, "//img[@class='article_img ATTACH_IMAGE' or @class='img' or @class='se-image-resource']")
                 if len(imgs) > 0:
                     if not os.path.isdir(img_dir):
                         os.mkdir(img_dir)
