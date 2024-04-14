@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import argparse
+import json
 
 from urllib.request import urlretrieve
 from selenium import webdriver
@@ -9,7 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import NoAlertPresentException, NoSuchElementException
+from selenium.common.exceptions import NoAlertPresentException
 
 from tqdm import tqdm
 from pathvalidate import sanitize_filename
@@ -21,9 +22,14 @@ def do_backup(args):
         options = Options()
         options.add_argument('--disable-proxy-certificate-handler')
         options.add_argument('--ignore-certificate-errors-spki-list')
+        options.add_argument('--ignore-certificate-errors')
         options.add_argument('--ignore-ssl-errors')
+        options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
-        driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+        driver = webdriver.Chrome(
+            service=ChromeService(ChromeDriverManager().install()),
+            options=options
+        )
         driver.get("https://nid.naver.com/nidlogin.login?mode=form&url=https://www.naver.com/")
         driver.implicitly_wait(1)
         input('네이버에 로그인한 후 엔터 키를 누르세요...\nPress Enter after logging in to Naver...')
@@ -112,8 +118,18 @@ def do_backup(args):
             if args.download_vid == True: # download videos
                 vid_dir = "%s/vid/" % save_dir
 
+                def download_video(vids):
+                    if len(vids) > 0:
+                        if not os.path.isdir(vid_dir):
+                            os.mkdir(vid_dir)
+                        for idx, vid_url in enumerate(vids):
+                            print("Downloading video [%d / %d]..." % (idx+1, len(vids)))
+                            try:
+                                urlretrieve(vid_url, '%s/%s_%d.mp4' % (vid_dir, article_title, idx))
+                            except:
+                                continue
+
                 btn_list = driver.find_elements(By.XPATH, "//button[@class='pzp-button pzp-pc-playback-switch pzp-pc__playback-switch pzp-pc-ui-button']")
-                
                 if len(btn_list) == 0:
                     vids = []
                     iframe_list = driver.find_elements(By.TAG_NAME, 'iframe')
@@ -128,14 +144,8 @@ def do_backup(args):
                             except:
                                 continue
 
-                        if len(vids) > 0:
-                            if not os.path.isdir(vid_dir):
-                                os.mkdir(vid_dir)
-
-                            for idx, vid in enumerate(vids):
-                                vid_url = vid.get_attribute('src')
-                                print("Downloading video [%d / %d]..." % (idx+1, len(vids)))
-                                urlretrieve(vid_url, '%s/%s_%d.mp4' % (vid_dir, article_title, idx))
+                        vid_urls = [vid.get_attribute('src') for vid in vids]
+                        download_video(vid_urls)
 
                         driver.get(article_url)
                         driver.switch_to.frame('cafe_main')
@@ -147,17 +157,37 @@ def do_backup(args):
                         driver.implicitly_wait(1)
 
                     vids = driver.find_elements(By.CLASS_NAME, 'webplayer-internal-video')
-                    if len(vids) > 0:
-                        if not os.path.isdir(vid_dir):
-                            os.mkdir(vid_dir)
+                    if vids[0].get_attribute('src')[:5] == 'blob:': # blob video
+                        print("Blob video detected. Extracting video URLs...")
+                        logs_raw = driver.get_log("performance")
+                        logs = [json.loads(lr["message"])["message"] for lr in logs_raw]
 
-                        for idx, vid in enumerate(vids):
-                            vid_url = vid.get_attribute('src')
-                            print("Downloading video [%d / %d]..." % (idx+1, len(vids)))
-                            try:
-                                urlretrieve(vid_url, '%s/%s_%d.mp4' % (vid_dir, article_title, idx))
-                            except:
-                                continue
+                        def log_filter(log_):
+                            return (
+                                # is an actual response
+                                log_["method"] == "Network.responseReceived"
+                                # and json
+                                and "json" in log_["params"]["response"]["mimeType"]
+                            )
+                        
+                        vid_urls = []
+                        for log in filter(log_filter, logs):
+                            request_id = log["params"]["requestId"]
+                            resp_url = log["params"]["response"]["url"]
+                            if '/vod/play' in resp_url:
+                                body = (driver.execute_cdp_cmd("Network.getResponseBody", {"requestId": request_id}))['body']
+                                body = json.loads(body)
+                                vid_list = body['videos']['list']
+                                selected_vid = vid_list[0]
+                                for vid in vid_list[1:]:
+                                    if vid['size'] > selected_vid['size']:
+                                        selected_vid = vid
+                                vid_urls.append(selected_vid['source'])
+
+                    else:
+                        vid_urls = [vid.get_attribute('src') for vid in vids]
+
+                    download_video(vid_urls)
 
 
             if args.download_attach == True: # download attachments
