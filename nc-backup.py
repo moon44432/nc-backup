@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import NoAlertPresentException, NoSuchElementException
 
 from tqdm import tqdm
 from pathvalidate import sanitize_filename
@@ -72,13 +73,13 @@ def do_backup(args):
         driver.get(article_url)
         driver.switch_to.frame('cafe_main')
         article_title = sanitize_filename(driver.find_element(By.XPATH, "//h3[@class='title_text']").text.strip())
-        driver.implicitly_wait(1)
+        driver.implicitly_wait(2)
 
         try:
             alert = driver.switch_to.alert
             alert.accept()
             print("Error: Skipping article id %d. Article does not exist or inaccessible." % (i, l, article_id))
-        except:
+        except NoAlertPresentException:
             save_dir = "%s/%s/%d_%s" % (args.root_dir, args.cafe_name, article_id, article_title)
             if not os.path.isdir(save_dir):
                 os.makedirs(save_dir)
@@ -104,19 +105,48 @@ def do_backup(args):
                 vid_dir = "%s/vid/" % save_dir
 
                 btn_list = driver.find_elements(By.XPATH, "//button[@class='pzp-button pzp-pc-playback-switch pzp-pc__playback-switch pzp-pc-ui-button']")
-                for btn in btn_list:
-                    driver.execute_script("arguments[0].click();", btn)
-                    driver.implicitly_wait(1)
+                
+                if len(btn_list) == 0:
+                    vids = []
+                    iframe_list = driver.find_elements(By.TAG_NAME, 'iframe')
+                    if len(iframe_list) > 0:
+                        for iframe in iframe_list:
+                            try:
+                                if '//serviceapi.nmv.naver.com/' in iframe.get_attribute('src'):
+                                    driver.get(iframe.get_attribute('src'))
+                                    driver.implicitly_wait(1)
+                                    driver.execute_script("arguments[0].click();", driver.find_element(By.XPATH, "//div[@class='u_rmc_btn play_anim u_rmc_btn_play']"))
+                                    vids.append(driver.find_element(By.TAG_NAME, 'video'))
+                            except NoSuchElementException:
+                                continue
 
-                vids = driver.find_elements(By.CLASS_NAME, 'webplayer-internal-video')
-                if len(vids) > 0:
-                    if not os.path.isdir(vid_dir):
-                        os.mkdir(vid_dir)
+                        if len(vids) > 0:
+                            if not os.path.isdir(vid_dir):
+                                os.mkdir(vid_dir)
 
-                    for idx, vid in enumerate(vids):
-                        vid_url = vid.get_attribute('src')
-                        print("Downloading video [%d / %d]..." % (idx+1, len(vids)))
-                        urlretrieve(vid_url, '%s/%s_%d.mp4' % (vid_dir, article_title, idx))
+                            for idx, vid in enumerate(vids):
+                                vid_url = vid.get_attribute('src')
+                                print("Downloading video [%d / %d]..." % (idx+1, len(vids)))
+                                urlretrieve(vid_url, '%s/%s_%d.mp4' % (vid_dir, article_title, idx))
+
+                        driver.get(article_url)
+                        driver.switch_to.frame('cafe_main')
+                        driver.implicitly_wait(1)
+                
+                else:
+                    for btn in btn_list:
+                        driver.execute_script("arguments[0].click();", btn)
+                        driver.implicitly_wait(1)
+
+                    vids = driver.find_elements(By.CLASS_NAME, 'webplayer-internal-video')
+                    if len(vids) > 0:
+                        if not os.path.isdir(vid_dir):
+                            os.mkdir(vid_dir)
+
+                        for idx, vid in enumerate(vids):
+                            vid_url = vid.get_attribute('src')
+                            print("Downloading video [%d / %d]..." % (idx+1, len(vids)))
+                            urlretrieve(vid_url, '%s/%s_%d.mp4' % (vid_dir, article_title, idx))
 
 
             if args.download_attach == True: # download attachments
@@ -140,7 +170,8 @@ def do_backup(args):
             html = html.decode('utf-8')
 
             f = open('%s/%d_%s.html' % (save_dir, article_id, article_title), 'w', encoding='UTF-8')
-            html = html.replace(u'<iframe title="답변쓰기에디터"' , u'w')
+            html = html.replace(u'<iframe title="답변쓰기에디터"', u'w')
+            html = html.replace(u'<iframe src="//serviceapi.nmv.naver.com/', u'w')
             html = html.replace('<meta name=\"robots\" content=\"noindex, nofollow\">' , '<meta charset=\"UTF-8\">' , 1)
             f.write(html)
             f.close()
