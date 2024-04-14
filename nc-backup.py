@@ -10,7 +10,6 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
 
-
 from tqdm import tqdm
 from pathvalidate import sanitize_filename
 
@@ -24,7 +23,7 @@ def do_backup(args):
         options.add_argument('--ignore-ssl-errors')
 
         driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
-        driver.get("https://naver.com")
+        driver.get("https://nid.naver.com/nidlogin.login?mode=form&url=https://www.naver.com/")
         driver.implicitly_wait(1)
         input('네이버에 로그인한 후 엔터 키를 누르세요...\nPress Enter after logging in to Naver...')
     except:
@@ -81,17 +80,15 @@ def do_backup(args):
             print("Error: Skipping article id %d. Article does not exist or inaccessible." % (i, l, article_id))
         except:
             save_dir = "%s/%s/%d_%s" % (args.root_dir, args.cafe_name, article_id, article_title)
-
             if not os.path.isdir(save_dir):
                 os.makedirs(save_dir)
 
-            print("Crawling article id %d [%s]..." % (article_id, article_title))
+            print("\nCrawling article id %d [%s]..." % (article_id, article_title))
 
             if args.download_img == True: # download images
                 img_dir = "%s/img/" % save_dir
 
                 imgs = driver.find_elements(By.XPATH, "//img[@class='article_img ATTACH_IMAGE']")
-                # print(imgs)
                 if len(imgs) > 0:
                     if not os.path.isdir(img_dir):
                         os.mkdir(img_dir)
@@ -100,14 +97,13 @@ def do_backup(args):
                         img_url = img.get_attribute('src')
                         ext = img_url.replace('.', ' ').replace('?', ' ').replace('%', ' ').split()[-2]
                         print("Downloading image [%d / %d]..." % (idx+1, len(imgs)))
-                        urlretrieve(img_url, '%s/%d.%s' % (img_dir, idx, ext))
+                        urlretrieve(img_url, '%s/%s_%d.%s' % (img_dir, article_title, idx, ext))
             
 
             if args.download_vid == True: # download videos
                 vid_dir = "%s/vid/" % save_dir
 
                 btn_list = driver.find_elements(By.XPATH, "//button[@class='pzp-button pzp-pc-playback-switch pzp-pc__playback-switch pzp-pc-ui-button']")
-                # print(btn_list)
                 for btn in btn_list:
                     driver.execute_script("arguments[0].click();", btn)
                     driver.implicitly_wait(1)
@@ -119,22 +115,22 @@ def do_backup(args):
 
                     for idx, vid in enumerate(vids):
                         vid_url = vid.get_attribute('src')
-                        print("Downloading video [%d / %d]" % (idx+1, len(vids)))
-                        urlretrieve(vid_url, '%s/%d.mp4' % (vid_dir, idx))
+                        print("Downloading video [%d / %d]..." % (idx+1, len(vids)))
+                        urlretrieve(vid_url, '%s/%s_%d.mp4' % (vid_dir, article_title, idx))
 
 
             if args.download_attach == True: # download attachments
                 attach_dir = "%s/attachments/" % save_dir
                 
                 attachments = driver.find_elements(By.CLASS_NAME, 'AttachFileListItem')
-                # print(attachments)
+                urls = driver.find_elements(By.XPATH, '//div[@class="file_download"]/a[1]')
                 if len(attachments) > 0:
                     if not os.path.isdir(attach_dir):
                         os.mkdir(attach_dir)
 
                     for idx, attach in enumerate(attachments):
                         filename = attach.find_element(By.CLASS_NAME, 'text').get_attribute("innerHTML").strip()
-                        attach_url = attach.find_element(By.XPATH, '//div[@class="file_download"]/a[1]').get_attribute('href')
+                        attach_url = urls[idx].get_attribute('href')
                         print("Downloading attachment [%d / %d]..." % (idx+1, len(attachments)))
                         urlretrieve(attach_url, '%s/%s' % (attach_dir, filename))
 
