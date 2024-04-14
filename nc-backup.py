@@ -67,6 +67,7 @@ def do_backup(args):
     i = 1
     l = len(article_list)
     success_count = 0
+    image_ext = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'tiff', 'tif', 'jfif', 'jp2', 'j2k', 'jpf', 'jpx', 'jpm', 'mj2']
 
     for article_id in tqdm(article_list):
         article_url = cafe_url + str(article_id)
@@ -96,9 +97,16 @@ def do_backup(args):
 
                     for idx, img in enumerate(imgs):
                         img_url = img.get_attribute('src')
-                        ext = img_url.replace('.', ' ').replace('?', ' ').replace('%', ' ').split()[-2]
+                        ext = 'png'
+                        for e in image_ext:
+                            if e in img_url.split('.')[-1]:
+                                ext = e
+                                break
                         print("Downloading image [%d / %d]..." % (idx+1, len(imgs)))
-                        urlretrieve(img_url, '%s/%s_%d.%s' % (img_dir, article_title, idx, ext))
+                        try:
+                            urlretrieve(img_url, '%s/%s_%d.%s' % (img_dir, article_title, idx, ext))
+                        except:
+                            continue
             
 
             if args.download_vid == True: # download videos
@@ -117,7 +125,7 @@ def do_backup(args):
                                     driver.implicitly_wait(1)
                                     driver.execute_script("arguments[0].click();", driver.find_element(By.XPATH, "//div[@class='u_rmc_btn play_anim u_rmc_btn_play']"))
                                     vids.append(driver.find_element(By.TAG_NAME, 'video'))
-                            except NoSuchElementException:
+                            except:
                                 continue
 
                         if len(vids) > 0:
@@ -146,7 +154,10 @@ def do_backup(args):
                         for idx, vid in enumerate(vids):
                             vid_url = vid.get_attribute('src')
                             print("Downloading video [%d / %d]..." % (idx+1, len(vids)))
-                            urlretrieve(vid_url, '%s/%s_%d.mp4' % (vid_dir, article_title, idx))
+                            try:
+                                urlretrieve(vid_url, '%s/%s_%d.mp4' % (vid_dir, article_title, idx))
+                            except:
+                                continue
 
 
             if args.download_attach == True: # download attachments
@@ -162,7 +173,10 @@ def do_backup(args):
                         filename = attach.find_element(By.CLASS_NAME, 'text').get_attribute("innerHTML").strip()
                         attach_url = urls[idx].get_attribute('href')
                         print("Downloading attachment [%d / %d]..." % (idx+1, len(attachments)))
-                        urlretrieve(attach_url, '%s/%s' % (attach_dir, filename))
+                        try:
+                            urlretrieve(attach_url, '%s/%s' % (attach_dir, filename))
+                        except:
+                            continue
 
 
             # download pdf
